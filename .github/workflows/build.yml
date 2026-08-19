@@ -1,38 +1,45 @@
-name: Build Android APK
+name: Android APK Build
 
 on:
   workflow_dispatch:
   push:
-    paths:
-      - '.github/workflows/build.yml'
+    branches:
+      - main
+      - master
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: تحميل المشروع
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: إعداد Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: فك ملف المشروع
+      - name: Find and extract project
+        shell: bash
         run: |
-          mkdir -p app_source
-          unzip -q BrostWaShawaya_V9_CloudBuild.zip -d app_source
-          echo "محتويات المشروع:"
-          find app_source -maxdepth 3 -type f | head -100
+          set -e
 
-      - name: العثور على مشروع Android
-        run: |
-          GRADLEW=$(find app_source -type f -name gradlew | head -1)
+          ZIP=$(find . -maxdepth 2 -type f -name "*.zip" | head -1)
+
+          if [ -z "$ZIP" ]; then
+            echo "لم يتم العثور على ملف ZIP"
+            exit 1
+          fi
+
+          echo "ZIP: $ZIP"
+
+          mkdir -p android-project
+          unzip -q "$ZIP" -d android-project
+
+          echo "البحث عن gradlew..."
+
+          GRADLEW=$(find android-project -type f -name "gradlew" | head -1)
 
           if [ -z "$GRADLEW" ]; then
-            echo "لم يتم العثور على gradlew داخل المشروع"
+            echo "لم يتم العثور على gradlew داخل ملف المشروع"
+            echo "محتويات المشروع:"
+            find android-project -maxdepth 3 -type f | head -100
             exit 1
           fi
 
@@ -40,19 +47,21 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          chmod +x "$GRADLEW"
-
           echo "تم العثور على المشروع:"
           echo "$PROJECT_DIR"
 
-      - name: بناء APK
+      - name: Make gradlew executable
         run: |
-          cd "$PROJECT_DIR"
+          chmod +x "$PROJECT_DIR/gradlew"
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
           ./gradlew assembleDebug --stacktrace
 
-      - name: رفع APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: BrostWaShawaya-APK
           path: |
-            app_source/**/build/outputs/apk/**/*.apk
+            ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
